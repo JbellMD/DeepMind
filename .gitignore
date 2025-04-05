@@ -1,0 +1,105 @@
+# Dependencies
+/node_modules
+/frontend/node_modules
+/.pnp
+.pnp.js
+
+# Testing
+/coverage
+
+# Next.js
+/frontend/.next/
+/frontend/out/
+
+# Production
+/build
+/frontend/build
+
+# Python backend
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+*.egg-info/
+.installed.cfg
+*.egg
+venv/
+.venv/
+backend/venv/
+backend/.venv/
+
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# Local environment files
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+.env.local
+frontend/.env.local
+backend/.env
+
+# IDE specific files
+.idea
+.vscode
+*.swp
+*.swo
+.DS_Store
+*.pem
+
+# Docker volumes and compose files
+docker/volumes/
+
+# Temporary files
+*.tmp
+*.bak
+*.swp
+*~.nib
+local.properties
+.settings/
+.loadpath
+.recommenders
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# VS Code directories
+.vscode/
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+
+# NPM package manager
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+yarn.lock
+package-lock.json
+frontend/package-lock.json
+
+# Misc
+.git
+.DS_Store
+Thumbs.db
