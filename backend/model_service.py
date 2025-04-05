@@ -72,11 +72,12 @@ def format_chat_prompt(messages: List[Dict[str, str]], system_prompt: Optional[s
         )
     
     # Fallback manual formatting for DeepSeek models
-    formatted_prompt = f"<|system|>\n{system_prompt}\n"
+    formatted_prompt = ""
     
-    for msg in conversation[1:]:  # Skip the system prompt we already added
+    for msg in conversation:
         role = msg["role"]
         content = msg["content"]
-        
-        if role == "user":
+        if role == "system":
+            formatted_prompt += f"<|system|>\n{content}\n"
+        elif role == "user":
             formatted_prompt += f"

@@ -86,4 +86,107 @@ def format_prompt(messages: List[Dict[str, str]], system_prompt: Optional[str] =
             if role == "system":
                 formatted_prompt += f"<|system|>\n{content}\n"
             elif role == "user":
-                formatted_prompt += f"
+                formatted_prompt += f"<|user|>\n{content}\n"
+            elif role == "assistant":
+                formatted_prompt += f"<|assistant|>\n{content}\n"
+    
+    return formatted_prompt
+
+async def generate_response(messages: List[Dict[str, str]], max_new_tokens: int = 150, temperature: float = 0.7) -> str:
+    """
+    Generate a response from the model given a conversation history.
+
+    Args:
+        messages (List[Dict[str, str]]): The conversation history.
+        max_new_tokens (int): Maximum number of tokens to generate.
+        temperature (float): Sampling temperature.
+
+    Returns:
+        str: The generated response.
+    """
+    model, tokenizer = await load_model()
+    prompt = format_prompt(messages)
+    logger.info("Generating response with prompt:")
+    logger.info(prompt)
+    
+    # Tokenize input
+    inputs = tokenizer(prompt, return_tensors="pt").to(model.device)
+    
+    # Generate output tokens
+    output = model.generate(
+        **inputs,
+        max_new_tokens=max_new_tokens,
+        temperature=temperature,
+        do_sample=True,
+        pad_token_id=tokenizer.eos_token_id
+    )
+    
+    # Decode generated tokens
+    response_text = tokenizer.decode(output[0], skip_special_tokens=True)
+    
+    # Post-process to remove the prompt part if necessary (assuming the prompt is at the start)
+    if response_text.startswith(prompt):
+        response_text = response_text[len(prompt):]
+    
+    return response_text.strip()
+
+async def stream_response(messages: List[Dict[str, str]], max_new_tokens: int = 150, temperature: float = 0.7) -> AsyncIterator[str]:
+    """
+    Asynchronously stream a generated response from the model given a conversation history.
+    
+    This function yields parts of the generated text as they become available.
+    
+    Args:
+        messages (List[Dict[str, str]]): The conversation history.
+        max_new_tokens (int): Maximum number of tokens to generate.
+        temperature (float): Sampling temperature.
+        
+    Yields:
+        str: A chunk of the generated response.
+    """
+    model, tokenizer = await load_model()
+    prompt = format_prompt(messages)
+    logger.info("Streaming response with prompt:")
+    logger.info(prompt)
+    
+    inputs = tokenizer(prompt, return_tensors="pt").to(model.device)
+    
+    # Use model.generate with output_scores and return_dict_in_generate to simulate streaming
+    output = model.generate(
+        **inputs,
+        max_new_tokens=max_new_tokens,
+        temperature=temperature,
+        do_sample=True,
+        pad_token_id=tokenizer.eos_token_id,
+        output_scores=True,
+        return_dict_in_generate=True,
+    )
+    
+    generated_ids = output.sequences[0]
+    
+    # Simple token-by-token streaming simulation
+    for token_id in generated_ids[len(inputs["input_ids"][0]):]:
+        token = tokenizer.decode(token_id.unsqueeze(0), skip_special_tokens=True)
+        yield token
+        await asyncio.sleep(0.05)  # simulate streaming delay
+
+# Example main function to test generation
+if __name__ == "__main__":
+    async def main():
+        test_messages = [
+            {"role": "user", "content": "Hello, how are you?"},
+            {"role": "assistant", "content": "I'm good, thank you! How can I help you today?"}
+        ]
+        # Test synchronous generation
+        response = await generate_response(test_messages)
+        print("Generated Response:")
+        print(response)
+        
+        # Test streaming response
+        print("Streaming Response:")
+        async for token in stream_response(test_messages):
+            print(token, end="", flush=True)
+    
+    asyncio.run(main())
+
+                
