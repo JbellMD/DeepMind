@@ -5,12 +5,12 @@ import os
 import json
 import time
 import asyncio
-from typing import List, Dict, Any, Optional, Union
+from typing import List, Dict, Any, Optional, Union, AsyncIterator
 
 import torch
 from fastapi import FastAPI, Request, Depends, HTTPException, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import StreamingResponse
+from fastapi.responses import StreamingResponse, JSONResponse
 from pydantic import BaseModel, Field
 from sse_starlette.sse import EventSourceResponse
 from loguru import logger
@@ -20,6 +20,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # Configure logger
+os.makedirs("logs", exist_ok=True)
 logger.add("logs/api.log", rotation="10 MB", level="INFO")
 
 # Initialize FastAPI app
@@ -58,6 +59,7 @@ class ChatResponse(BaseModel):
 # Initialize model (will be lazily loaded when needed)
 MODEL = None
 TOKENIZER = None
+MODEL_NAME = os.getenv("MODEL_PATH", "deepseek-ai/deepseek-coder-33b-instruct")
 
 def get_device():
     """Determine the optimal device for inference."""
@@ -81,19 +83,16 @@ async def load_model():
     try:
         from transformers import AutoModelForCausalLM, AutoTokenizer
         
-        # Change to your fine-tuned model path or HF model ID
-        model_name = os.getenv("MODEL_PATH", "deepseek-ai/deepseek-coder-33b-instruct")
-        
-        logger.info(f"Loading model: {model_name}")
+        logger.info(f"Loading model: {MODEL_NAME}")
         device = get_device()
         logger.info(f"Using device: {device}")
         
         # Load tokenizer
-        TOKENIZER = AutoTokenizer.from_pretrained(model_name)
+        TOKENIZER = AutoTokenizer.from_pretrained(MODEL_NAME)
         
         # Load model with optimizations
         MODEL = AutoModelForCausalLM.from_pretrained(
-            model_name,
+            MODEL_NAME,
             torch_dtype=torch.float16,  # Use half precision
             trust_remote_code=True,
             device_map="auto",
