@@ -1,0 +1,98 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  /* Default light theme variables */
+  --bg-color: #ffffff;
+  --text-color: #111827;
+  --border-rgb: 229, 231, 235;
+  --message-user-bg: #f3f4f6;
+  --message-bot-bg: #f9fafb;
+  --input-bg: #ffffff;
+  --primary-button-bg: #3b82f6;
+  --primary-button-hover-bg: #2563eb;
+  --secondary-button-bg: #f3f4f6;
+  --secondary-button-hover-bg: #e5e7eb;
+  --active-session-bg: #dbeafe;
+  --active-session-text: #1e40af;
+  --hover-session-bg: #f3f4f6;
+}
+
+/* Dark mode variables applied via ThemeContext */
+.dark {
+  --bg-color: #111827;
+  --text-color: #f3f4f6;
+  --border-rgb: 75, 85, 99;
+  --message-user-bg: #1f2937;
+  --message-bot-bg: #1a2133;
+  --input-bg: #1f2937;
+  --primary-button-bg: #3b82f6;
+  --primary-button-hover-bg: #2563eb;
+  --secondary-button-bg: #374151;
+  --secondary-button-hover-bg: #4b5563;
+  --active-session-bg: #2563eb;
+  --active-session-text: #ffffff;
+  --hover-session-bg: #1f2937;
+}
+
+/* Global styles */
+html,
+body {
+  height: 100%;
+  overflow: hidden;
+}
+
+/* Scrollbar styling */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(var(--border-rgb), 0.3) transparent;
+}
+
+/* Chrome, Edge, and Safari */
+*::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+*::-webkit-scrollbar-thumb {
+  background-color: rgba(var(--border-rgb), 0.3);
+  border-radius: 20px;
+  border: 3px solid transparent;
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background-color: rgba(var(--border-rgb), 0.5);
+}
+
+/* Markdown content styling */
+.markdown-content {
+  @apply prose dark:prose-invert max-w-none;
+  font-size: 0.95rem;
+}
+
+.markdown-content pre {
+  @apply bg-gray-100 dark:bg-gray-800 rounded-md p-4 overflow-x-auto;
+}
+
+.markdown-content code {
+  @apply text-red-500 dark:text-red-400;
+}
+
+.markdown-content pre code {
+  @apply text-gray-800 dark:text-gray-200;
+}
+
+/* Animation for typing indicator */
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+
+.animate-pulse {
+  animation: pulse 1.5s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
