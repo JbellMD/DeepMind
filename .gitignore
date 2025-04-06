@@ -1,6 +1,7 @@
 # Dependencies
 /node_modules
 /frontend/node_modules
+/frontend/monitoring-dashboard/node_modules
 /.pnp
 .pnp.js
 
@@ -14,6 +15,7 @@
 # Production
 /build
 /frontend/build
+/frontend/monitoring-dashboard/build
 
 # Python backend
 __pycache__/
@@ -98,8 +100,4 @@ yarn-error.log*
 yarn.lock
 package-lock.json
 frontend/package-lock.json
-
-# Misc
-.git
-.DS_Store
-Thumbs.db
+frontend/monitoring-dashboard/package-lock.json
