@@ -12,126 +12,182 @@ This project implements a high-performance conversational AI system with a moder
 - **Modern UI**: React/Next.js frontend with Tailwind CSS and Framer Motion animations
 - **Streaming Responses**: Real-time token streaming via Server-Sent Events
 - **Context Management**: Efficient handling of conversation history
-- **Optional RAG Support**: Vector database integration for retrieval-augmented generation
+- **RAG Integration**: Vector database with optimized document retrieval
 - **Advanced Capabilities**: Function calling, tool use, and plugin system
+- **Memory Management**: Optimized for 512GB unified memory
+- **Model Fine-tuning**: Support for DeepSeek model customization
+
+## Architecture
+
+### Memory Management
+- **Unified Memory Optimization**:
+  - Dynamic batch sizing based on available memory
+  - Gradient checkpointing for efficient training
+  - Automatic memory cleanup during inference
+  - Optimized KV cache management
+
+### Performance Features
+- **Inference Optimization**:
+  - MPS/Metal acceleration for Apple Silicon
+  - Mixed-precision training (FP16/BF16)
+  - Efficient attention mechanisms
+  - Optimized tensor operations
+
+### Model Training
+- **Fine-tuning Capabilities**:
+  - LoRA/QLoRA support for efficient adaptation
+  - Gradient accumulation for large batch training
+  - Custom loss functions and metrics
+  - Distributed training support
+
+### RAG System
+- **Vector Store**:
+  - File-based document storage
+  - Efficient similarity search
+  - Automatic embedding generation
+  - Metadata management
 
 ## Project Structure
 
 ```
 DeepMind/
 │
-├── backend/               # FastAPI backend for model serving
-│   ├── config.py          # Configuration settings
-│   ├── api.py             # API endpoints
-│   ├── model_service.py   # Model management
-│   ├── server.py          # Server startup script
-│   └── requirements.txt   # Python dependencies
+├── backend/                # FastAPI backend
+│   ├── config.py           # Configuration settings
+│   ├── model/              # Model management
+│   │   ├── service.py      # Model serving
+│   │   ├── training.py     # Fine-tuning logic
+│   │   └── optimization.py # Performance optimizations
+│   ├── rag/                # RAG components
+│   │   ├── vector_store.py # Document storage
+│   │   ├── processor.py    # Document processing
+│   │   └── service.py      # RAG integration
+│   └── api/                # API endpoints
 │
 ├── frontend/              # Next.js frontend
 │   ├── components/        # React components
-│   ├── pages/             # Next.js pages
-│   ├── styles/            # CSS and styling
-│   ├── utils/             # Utility functions
-│   └── public/            # Static assets
+│   ├── pages/            # Next.js pages
+│   └── styles/           # CSS and styling
 │
-├── shared/                # Shared resources
-├── docker/                # Docker configurations
-└── README.md              # Project documentation
+└── docker/               # Docker configurations
 ```
 
-## Getting Started
+## System Requirements
 
-### Prerequisites
+- **Hardware**:
+  - Apple Silicon M-series (optimized for M3 Studio)
+  - 512GB unified memory
+  - NVMe SSD for fast storage
 
-- Python 3.11+
-- Node.js 18+
-- CUDA-compatible GPU or Apple Silicon M-series chip
+- **Software**:
+  - macOS Sonoma or later
+  - Python 3.11+
+  - Node.js 18+
+  - Docker Desktop for Mac
 
-### Backend Setup
+## Performance Optimization
 
-1. Navigate to the backend directory:
-   ```bash
-   cd backend
+### Memory Management
+1. **Dynamic Batching**:
+   ```python
+   # Example configuration in config.py
+   MAX_BATCH_SIZE = 32
+   MIN_BATCH_SIZE = 1
+   MEMORY_BUFFER = 0.2  # Keep 20% memory free
+   
+   def get_optimal_batch_size(available_memory):
+       return min(MAX_BATCH_SIZE, max(MIN_BATCH_SIZE, 
+              int(available_memory * (1 - MEMORY_BUFFER) / MODEL_MEMORY_FOOTPRINT)))
    ```
 
-2. Create a virtual environment:
-   ```bash
-   python -m venv venv
-   source venv/bin/activate  # On Windows: venv\Scripts\activate
+2. **Gradient Checkpointing**:
+   ```python
+   # Example in training.py
+   model.gradient_checkpointing_enable()
+   model.enable_input_require_grads()
    ```
 
-3. Install dependencies:
+### Model Fine-tuning
+
+1. **Configuration**:
    ```bash
-   pip install -r requirements.txt
+   # Start fine-tuning
+   python train.py \
+     --model deepseek-ai/deepseek-coder-33b-instruct \
+     --train_batch_size 16 \
+     --gradient_accumulation_steps 4 \
+     --learning_rate 2e-5 \
+     --num_epochs 3 \
+     --use_mps
    ```
 
-4. Start the FastAPI server:
+2. **Monitoring**:
    ```bash
-   python server.py
+   # Monitor training metrics
+   tensorboard --logdir runs/
    ```
 
-### Frontend Setup
+## Docker Deployment
 
-1. Navigate to the frontend directory:
+1. **Build the Container**:
    ```bash
-   cd frontend
+   ./docker-scripts.sh build
    ```
 
-2. Install dependencies:
+2. **Start Services**:
    ```bash
-   npm install
+   ./docker-scripts.sh start
    ```
 
-3. Start the development server:
+3. **Monitor Logs**:
    ```bash
-   npm run dev
+   ./docker-scripts.sh logs
    ```
-
-4. Open your browser to [http://localhost:3000](http://localhost:3000)
 
 ## Development
 
-### Backend
+### Backend Development
 
-The backend uses FastAPI with optimized inference via vLLM or DeepSpeed, supporting:
-- Token streaming
-- FP16/INT4 quantization
-- KV caching
-- Prompt templates
-- Tool/function calling
+The backend is optimized for high-performance inference and training:
+- Token streaming with backpressure handling
+- Efficient memory management
+- Automatic batch size optimization
+- RAG with smart caching
 
-### Frontend
+### Model Fine-tuning
 
-The frontend uses Next.js with Tailwind CSS and implements:
-- Modern chat interface
-- Real-time typing animations
-- Markdown rendering
-- Code syntax highlighting
-- Dark/light mode
-- Responsive design
+1. **Prepare Training Data**:
+   ```bash
+   python scripts/prepare_data.py \
+     --input_file data/raw/training.jsonl \
+     --output_dir data/processed
+   ```
 
-## Configuration
+2. **Start Fine-tuning**:
+   ```bash
+   python scripts/train.py \
+     --model_name deepseek-ai/deepseek-coder-33b-instruct \
+     --train_data data/processed/train.pt \
+     --eval_data data/processed/eval.pt \
+     --output_dir models/fine-tuned
+   ```
 
-Create a `.env` file in the backend directory with the following variables:
+3. **Monitor Resources**:
+   ```bash
+   python scripts/monitor.py --log_file training.log
+   ```
 
-```
-MODEL_PATH=your-fine-tuned-deepseek-model
-MAX_TOKENS=4096
-TEMPERATURE=0.7
-TOP_P=0.9
-TOP_K=50
-HOST=0.0.0.0
-PORT=8000
-DEBUG=False
-```
+## Performance Monitoring
 
-## Deployment
+- Memory usage tracking
+- Inference latency metrics
+- Training throughput
+- RAG retrieval performance
 
-Docker configurations are provided for easy deployment:
-- Backend container with GPU support
-- Frontend container
-- Optional database containers
+## Contributing
+
+Please read [CONTRIBUTING.md](CONTRIBUTING.md) for details on our code of conduct and the process for submitting pull requests.
 
 ## License
 
-[MIT License](LICENSE)
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
