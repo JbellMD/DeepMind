@@ -123,6 +123,107 @@ def format_prompt(messages: List[Dict[str, str]], system_prompt: Optional[str] =
             role = msg["role"]
             content = msg["content"]
             if role == "system":
-                formatted_prompt += f"<|system|>\n{content}\n"
+                formatted_prompt += f"<|system|>\n{content}\n<|end|>\n"
             elif role == "user":
-                formatted_prompt += f"
+                formatted_prompt += f"<|user|>\n{content}\n<|end|>\n"
+            elif role == "assistant":
+                formatted_prompt += f"<|assistant|>\n{content}\n<|end|>\n"
+        formatted_prompt += "<|assistant|>\n"  # Start assistant response
+    
+    return formatted_prompt
+
+async def generate_response(
+    messages: List[Dict[str, str]],
+    system_prompt: Optional[str] = None,
+    temperature: float = 0.7,
+    max_tokens: int = 1024,
+    use_rag: bool = False,
+    stream: bool = False
+) -> Union[str, AsyncIterator[str]]:
+    """Generate a response from the model, with optional RAG and streaming."""
+    model, tokenizer = await load_model()
+    
+    # Format the base prompt
+    prompt = format_prompt(messages, system_prompt)
+    
+    # Integrate RAG if enabled
+    if use_rag:
+        rag_service = await load_rag_service()
+        last_user_message = next((m["content"] for m in reversed(messages) if m["role"] == "user"), "")
+        if last_user_message:
+            retrieved_docs = rag_service.retrieve(last_user_message, top_k=3)
+            context = "\n".join([doc["content"] for doc in retrieved_docs])
+            prompt += f"\n<|context|>\n{context}\n<|end|>\n"
+            logger.info(f"RAG context added: {len(retrieved_docs)} documents retrieved")
+    
+    # Tokenize input
+    inputs = tokenizer(prompt, return_tensors="pt").to(model.device)
+    
+    if stream:
+        # Streaming response
+        async def stream_generator():
+            for output in model.generate(
+                **inputs,
+                max_length=max_tokens,
+                temperature=temperature,
+                do_sample=True,
+                pad_token_id=tokenizer.eos_token_id,
+                # Note: Streaming is simulated here; adjust if model supports native streaming
+            ):
+                yield tokenizer.decode(output[0], skip_special_tokens=True)
+        
+        return stream_generator()
+    else:
+        # Non-streaming response
+        outputs = model.generate(
+            **inputs,
+            max_length=max_tokens,
+            temperature=temperature,
+            do_sample=True,
+            pad_token_id=tokenizer.eos_token_id
+        )
+        return tokenizer.decode(outputs[0], skip_special_tokens=True)
+
+async def main():
+    """Simple CLI for testing the chatbot."""
+    logger.info("Starting DeepMind Chatbot CLI")
+    await load_model()  # Preload model
+    await load_rag_service()  # Preload RAG service
+    
+    conversation = []
+    while True:
+        try:
+            user_input = input("You: ").strip()
+            if user_input.lower() in ["exit", "quit"]:
+                break
+            
+            # Add user message to conversation
+            conversation.append({"role": "user", "content": user_input})
+            
+            # Generate response
+            start_time = time.time()
+            response = await generate_response(
+                messages=conversation,
+                system_prompt=DEFAULT_SYSTEM_PROMPT,
+                temperature=0.7,
+                max_tokens=1024,
+                use_rag=True,  # Toggle RAG here
+                stream=False
+            )
+            
+            print(f"Bot: {response}")
+            logger.info(f"Response generated in {time.time() - start_time:.2f} seconds")
+            
+            # Add assistant response to conversation
+            conversation.append({"role": "assistant", "content": response})
+        
+        except KeyboardInterrupt:
+            break
+        except Exception as e:
+            logger.error(f"Error in CLI: {str(e)}")
+            print("An error occurred. Please try again.")
+
+if __name__ == "__main__":
+    # Configure logger
+    logger.add("logs/chatbot.log", rotation="10 MB", level="INFO")
+    asyncio.run(main())

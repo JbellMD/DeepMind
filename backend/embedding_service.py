@@ -44,7 +44,7 @@ class EmbeddingService:
         
         # Load model
         try:
-            self.model = SentenceTransformer(model_name, device=device, cache_folder=cache_dir)
+            self.model = SentenceTransformer(model_name, cache_folder=cache_dir, device=self.device)
             logger.info(f"Loaded embedding model: {model_name}")
         except Exception as e:
             logger.error(f"Failed to load embedding model: {str(e)}")
@@ -60,20 +60,13 @@ class EmbeddingService:
             Embedding vector as a list of floats
         """
         try:
-            # Truncate text if it's too long (most models have a token limit)
-            if len(text) > 10000:
-                logger.warning(f"Text is too long ({len(text)} chars), truncating to 10000 chars")
-                text = text[:10000]
-            
             # Generate embedding
-            embedding = self.model.encode(text)
-            
-            # Convert to list of floats
-            return embedding.tolist()
+            with torch.no_grad():
+                embedding = self.model.encode(text, convert_to_tensor=True)
+                return embedding.cpu().numpy().tolist()
         except Exception as e:
-            logger.error(f"Error generating embedding: {str(e)}")
-            # Return a zero vector as fallback
-            return [0.0] * self.get_embedding_dimension()
+            logger.error(f"Failed to generate embedding: {str(e)}")
+            raise RuntimeError(f"Failed to generate embedding: {str(e)}")
     
     def generate_embeddings(self, texts: List[str]) -> List[List[float]]:
         """Generate embeddings for multiple texts.
@@ -85,25 +78,21 @@ class EmbeddingService:
             List of embedding vectors
         """
         try:
-            # Truncate texts if they're too long
-            processed_texts = []
-            for text in texts:
-                if len(text) > 10000:
-                    logger.warning(f"Text is too long ({len(text)} chars), truncating to 10000 chars")
-                    processed_texts.append(text[:10000])
-                else:
-                    processed_texts.append(text)
-            
             # Generate embeddings in batch
-            embeddings = self.model.encode(processed_texts)
-            
-            # Convert to list of lists
-            return embeddings.tolist()
+            with torch.no_grad():
+                embeddings = self.model.encode(texts, convert_to_tensor=True)
+                return embeddings.cpu().numpy().tolist()
         except Exception as e:
-            logger.error(f"Error generating embeddings: {str(e)}")
-            # Return zero vectors as fallback
-            dim = self.get_embedding_dimension()
-            return [[0.0] * dim for _ in range(len(texts))]
+            logger.error(f"Failed to generate embeddings: {str(e)}")
+            raise RuntimeError(f"Failed to generate embeddings: {str(e)}")
+    
+    def get_embedding_dimension(self) -> int:
+        """Get the dimension of the embedding vectors.
+        
+        Returns:
+            Dimension of the embedding vectors
+        """
+        return self.model.get_sentence_embedding_dimension()
     
     def embed_documents(self, documents: List[Document]) -> List[Document]:
         """Generate embeddings for a list of documents.
@@ -114,42 +103,23 @@ class EmbeddingService:
         Returns:
             List of documents with embeddings
         """
-        # Extract text from documents
-        texts = [doc.content for doc in documents]
-        
-        # Generate embeddings
-        embeddings = self.generate_embeddings(texts)
-        
-        # Add embeddings to documents
-        for i, doc in enumerate(documents):
-            doc.embedding = embeddings[i]
-        
-        return documents
-    
-    def get_embedding_dimension(self) -> int:
-        """Get the dimension of the embedding vectors.
-        
-        Returns:
-            Dimension of the embedding vectors
-        """
-        return self.model.get_sentence_embedding_dimension()
-    
-    def get_query_embedding(self, query: str) -> List[float]:
-        """Generate embedding for a query.
-        
-        This is the same as generate_embedding, but may be overridden
-        in subclasses if query embeddings should be handled differently.
-        
-        Args:
-            query: Query text
+        try:
+            # Extract text from documents
+            texts = [doc.content for doc in documents]
             
-        Returns:
-            Query embedding vector
-        """
-        return self.generate_embedding(query)
+            # Generate embeddings
+            embeddings = self.generate_embeddings(texts)
+            
+            # Add embeddings to documents
+            for doc, embedding in zip(documents, embeddings):
+                doc.embedding = embedding
+            
+            return documents
+        except Exception as e:
+            logger.error(f"Failed to embed documents: {str(e)}")
+            raise RuntimeError(f"Failed to embed documents: {str(e)}")
 
-
-class HuggingFaceEmbeddingService(EmbeddingService):
+class HuggingFaceEmbeddingService:
     """Embedding service using HuggingFace models directly."""
     
     def __init__(
@@ -204,53 +174,35 @@ class HuggingFaceEmbeddingService(EmbeddingService):
         try:
             # Tokenize text
             inputs = self.tokenizer(
-                text, 
-                return_tensors="pt", 
-                padding=True, 
-                truncation=True, 
-                max_length=512
+                text,
+                padding=True,
+                truncation=True,
+                max_length=512,
+                return_tensors="pt"
             ).to(self.device)
             
             # Generate embeddings
             with torch.no_grad():
                 outputs = self.model(**inputs)
                 
-                # Get the embeddings
-                embeddings = outputs.last_hidden_state
-                
-                # Apply pooling strategy
+                # Get embeddings based on pooling strategy
                 if self.pooling_strategy == "cls":
-                    # Use [CLS] token embedding
-                    pooled_embedding = embeddings[:, 0, :]
+                    embeddings = outputs.last_hidden_state[:, 0]
                 elif self.pooling_strategy == "mean":
-                    # Mean pooling
                     attention_mask = inputs["attention_mask"]
-                    mask = attention_mask.unsqueeze(-1).expand(embeddings.size()).float()
-                    sum_embeddings = torch.sum(embeddings * mask, 1)
-                    sum_mask = torch.sum(mask, 1)
-                    pooled_embedding = sum_embeddings / sum_mask
+                    embeddings = (outputs.last_hidden_state * attention_mask.unsqueeze(-1)).sum(1)
+                    embeddings = embeddings / attention_mask.sum(-1, keepdim=True)
                 elif self.pooling_strategy == "max":
-                    # Max pooling
                     attention_mask = inputs["attention_mask"]
-                    mask = attention_mask.unsqueeze(-1).expand(embeddings.size()).float()
-                    embeddings[mask == 0] = -1e9  # Set padding tokens to large negative value
-                    pooled_embedding = torch.max(embeddings, 1)[0]
+                    embeddings = outputs.last_hidden_state.masked_fill(~attention_mask.unsqueeze(-1).bool(), -1e9)
+                    embeddings = embeddings.max(dim=1)[0]
                 else:
                     raise ValueError(f"Unknown pooling strategy: {self.pooling_strategy}")
                 
-                # Convert to numpy and then to list
-                embedding_np = pooled_embedding.cpu().numpy()[0]
-                
-                # Normalize the embedding
-                norm = np.linalg.norm(embedding_np)
-                if norm > 0:
-                    embedding_np = embedding_np / norm
-                
-                return embedding_np.tolist()
+                return embeddings[0].cpu().numpy().tolist()
         except Exception as e:
-            logger.error(f"Error generating embedding: {str(e)}")
-            # Return a zero vector as fallback
-            return [0.0] * self.get_embedding_dimension()
+            logger.error(f"Failed to generate embedding: {str(e)}")
+            raise RuntimeError(f"Failed to generate embedding: {str(e)}")
     
     def get_embedding_dimension(self) -> int:
         """Get the dimension of the embedding vectors.

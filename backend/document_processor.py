@@ -19,18 +19,18 @@ class TextSplitter:
         self, 
         chunk_size: int = 1000, 
         chunk_overlap: int = 200,
-        separators: List[str] = ["\n\n", "\n", ". ", " ", ""]
+        separator: str = "\n\n"
     ):
         """Initialize the text splitter.
         
         Args:
-            chunk_size: Maximum size of each text chunk
-            chunk_overlap: Overlap between chunks
-            separators: List of separators to use for splitting, in order of preference
+            chunk_size: Maximum size of each chunk in characters
+            chunk_overlap: Number of characters to overlap between chunks
+            separator: String to use for splitting text into chunks
         """
         self.chunk_size = chunk_size
         self.chunk_overlap = chunk_overlap
-        self.separators = separators
+        self.separator = separator
     
     def split_text(self, text: str) -> List[str]:
         """Split text into chunks.
@@ -41,61 +41,51 @@ class TextSplitter:
         Returns:
             List of text chunks
         """
-        # Handle empty or whitespace-only text
-        if not text or text.isspace():
-            return []
-        
-        # If text is shorter than chunk_size, return it as is
-        if len(text) <= self.chunk_size:
-            return [text]
-        
+        # First split by separator
+        splits = text.split(self.separator)
         chunks = []
+        current_chunk = []
+        current_size = 0
         
-        # Try each separator in order
-        for separator in self.separators:
-            if separator == "":
-                # If we've reached the empty separator, split by character
-                current_chunk = ""
-                for char in text:
-                    if len(current_chunk) >= self.chunk_size:
-                        chunks.append(current_chunk)
-                        current_chunk = current_chunk[-self.chunk_overlap:] if self.chunk_overlap > 0 else ""
-                    current_chunk += char
+        for split in splits:
+            split = split.strip()
+            if not split:
+                continue
                 
-                if current_chunk:
-                    chunks.append(current_chunk)
-                break
+            split_size = len(split)
             
-            # Split by the current separator
-            splits = text.split(separator)
-            
-            # If we get useful splits, process them
-            if len(splits) > 1:
-                current_chunk = ""
-                
-                for split in splits:
-                    if not split:
-                        continue
-                        
-                    # If adding this split would exceed chunk_size, add the current chunk to results
-                    if len(current_chunk) + len(split) + len(separator) > self.chunk_size and current_chunk:
-                        chunks.append(current_chunk)
-                        # Start new chunk with overlap
-                        current_chunk = current_chunk[-self.chunk_overlap:] if self.chunk_overlap > 0 else ""
-                    
-                    # Add the split to the current chunk
-                    if current_chunk:
-                        current_chunk += separator + split
-                    else:
-                        current_chunk = split
-                
-                # Add the final chunk if it's not empty
+            if current_size + split_size <= self.chunk_size:
+                current_chunk.append(split)
+                current_size += split_size
+            else:
+                # Save current chunk if it's not empty
                 if current_chunk:
-                    chunks.append(current_chunk)
+                    chunks.append(self.separator.join(current_chunk))
                 
-                # If we successfully split the text, return the chunks
-                if chunks:
-                    return chunks
+                # Start new chunk with overlap
+                if current_chunk and self.chunk_overlap > 0:
+                    # Calculate how many previous splits to keep for overlap
+                    overlap_size = 0
+                    overlap_chunks = []
+                    for chunk in reversed(current_chunk):
+                        if overlap_size + len(chunk) <= self.chunk_overlap:
+                            overlap_chunks.insert(0, chunk)
+                            overlap_size += len(chunk)
+                        else:
+                            break
+                    current_chunk = overlap_chunks
+                    current_size = overlap_size
+                else:
+                    current_chunk = []
+                    current_size = 0
+                
+                # Add current split to new chunk
+                current_chunk.append(split)
+                current_size += split_size
+        
+        # Add final chunk
+        if current_chunk:
+            chunks.append(self.separator.join(current_chunk))
         
         return chunks
 
@@ -116,7 +106,11 @@ class DocumentProcessor:
         self.text_splitter = text_splitter or TextSplitter()
         self.metadata_extractors = metadata_extractors or []
     
-    def process_text(self, text: str, metadata: Optional[Dict[str, Any]] = None) -> List[Document]:
+    def process_text(
+        self, 
+        text: str, 
+        metadata: Optional[Dict[str, Any]] = None
+    ) -> List[Document]:
         """Process text into documents.
         
         Args:
@@ -126,24 +120,30 @@ class DocumentProcessor:
         Returns:
             List of processed documents
         """
+        # Initialize metadata
         metadata = metadata or {}
+        
+        # Extract additional metadata
+        for extractor in self.metadata_extractors:
+            try:
+                extracted = extractor(text)
+                if extracted:
+                    metadata.update(extracted)
+            except Exception as e:
+                logger.warning(f"Metadata extractor failed: {str(e)}")
+        
+        # Split text into chunks
         chunks = self.text_splitter.split_text(text)
         
+        # Create documents
         documents = []
         for i, chunk in enumerate(chunks):
-            # Extract metadata if available
-            chunk_metadata = {**metadata}
-            for extractor in self.metadata_extractors:
-                try:
-                    extracted = extractor(chunk)
-                    if extracted:
-                        chunk_metadata.update(extracted)
-                except Exception as e:
-                    logger.warning(f"Metadata extraction failed: {str(e)}")
-            
-            # Add chunk index to metadata
-            chunk_metadata["chunk_index"] = i
-            chunk_metadata["chunk_count"] = len(chunks)
+            # Add chunk-specific metadata
+            chunk_metadata = {
+                "chunk_index": i,
+                "total_chunks": len(chunks),
+                **metadata
+            }
             
             # Create document
             doc = Document(
@@ -154,7 +154,11 @@ class DocumentProcessor:
         
         return documents
     
-    def process_file(self, file_path: Union[str, Path], metadata: Optional[Dict[str, Any]] = None) -> List[Document]:
+    def process_file(
+        self, 
+        file_path: Union[str, Path], 
+        metadata: Optional[Dict[str, Any]] = None
+    ) -> List[Document]:
         """Process a file into documents.
         
         Args:
@@ -168,58 +172,50 @@ class DocumentProcessor:
         if not file_path.exists():
             raise FileNotFoundError(f"File not found: {file_path}")
         
-        # Basic metadata from file
+        # Initialize metadata with file info
+        metadata = metadata or {}
         file_metadata = {
             "source": str(file_path),
             "filename": file_path.name,
-            "file_extension": file_path.suffix.lower(),
-            "file_size": file_path.stat().st_size,
-            "created_at": file_path.stat().st_ctime,
-            "modified_at": file_path.stat().st_mtime,
+            "extension": file_path.suffix.lower()[1:] if file_path.suffix else None,
+            "created": os.path.getctime(file_path),
+            "modified": os.path.getmtime(file_path),
+            **metadata
         }
         
-        # Merge with provided metadata
-        if metadata:
-            file_metadata.update(metadata)
-        
-        # Read file content
-        try:
-            with open(file_path, 'r', encoding='utf-8') as f:
-                text = f.read()
-            return self.process_text(text, file_metadata)
-        except UnicodeDecodeError:
-            logger.warning(f"Could not decode file as UTF-8: {file_path}")
-            # Try with a different encoding or handle binary files
-            return []
-        except Exception as e:
-            logger.error(f"Error processing file {file_path}: {str(e)}")
-            return []
+        # Read and process file
+        with open(file_path, "r", encoding="utf-8") as f:
+            text = f.read()
+            return self.process_text(text, metadata=file_metadata)
 
 # Example metadata extractors
-def extract_title_from_text(text: str) -> Dict[str, Any]:
+def extract_title_from_text(text: str) -> Optional[Dict[str, str]]:
     """Extract a title from the first line of text."""
-    lines = text.strip().split('\n')
-    if lines:
-        first_line = lines[0].strip()
-        # If first line looks like a title (not too long, no punctuation at end)
-        if len(first_line) <= 100 and not first_line.endswith(('.', '?', '!')):
-            return {"title": first_line}
-    return {}
+    if not text:
+        return None
+    
+    # Get first non-empty line
+    lines = text.strip().split("\n")
+    for line in lines:
+        line = line.strip()
+        if line:
+            return {"title": line}
+    return None
 
-def extract_code_language(text: str) -> Dict[str, Any]:
+def extract_code_language(text: str) -> Optional[Dict[str, str]]:
     """Attempt to detect programming language from code snippets."""
-    # Simple heuristics for language detection
+    # Simple language detection based on file patterns
     patterns = {
-        "python": r"import\s+[\w\.]+|def\s+\w+\s*\(|class\s+\w+\s*:",
-        "javascript": r"const\s+\w+\s*=|let\s+\w+\s*=|function\s+\w+\s*\(|import\s+.*from\s+['\"]",
-        "typescript": r"interface\s+\w+|type\s+\w+\s*=|class\s+\w+\s*implements",
-        "html": r"<!DOCTYPE\s+html>|<html>|<head>|<body>",
-        "css": r"{\s*[\w-]+\s*:\s*[\w-]+\s*;}|@media|@keyframes",
-        "sql": r"SELECT\s+.*FROM|INSERT\s+INTO|CREATE\s+TABLE|UPDATE\s+.*SET",
+        "python": r"(import\s+[\w.]+|from\s+[\w.]+\s+import|def\s+\w+\s*\(|class\s+\w+:)",
+        "javascript": r"(const\s+\w+\s*=|let\s+\w+\s*=|function\s+\w+\s*\(|class\s+\w+\s*{)",
+        "typescript": r"(interface\s+\w+|type\s+\w+\s*=|export\s+class)",
+        "html": r"(<html|<!DOCTYPE\s+html|<head|<body)",
+        "css": r"(@media|@import|[.#]\w+\s*{)",
+        "sql": r"(SELECT|INSERT|UPDATE|DELETE|CREATE\s+TABLE|ALTER\s+TABLE)\s"
     }
     
     for lang, pattern in patterns.items():
         if re.search(pattern, text, re.IGNORECASE):
             return {"language": lang}
     
-    return {}
+    return None

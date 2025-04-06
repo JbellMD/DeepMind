@@ -20,80 +20,66 @@ class Document(BaseModel):
     embedding: Optional[List[float]] = None
 
 class VectorStore:
-    """Simple file-based vector store for document embeddings."""
+    """A simple file-based vector store for document storage and retrieval."""
     
-    def __init__(self, data_dir: str = "data/vector_store"):
+    def __init__(self, store_dir: str):
         """Initialize the vector store.
         
         Args:
-            data_dir: Directory to store vector data
+            store_dir: Directory to store vector data
         """
-        self.data_dir = Path(data_dir)
-        self.documents_dir = self.data_dir / "documents"
-        self.index_path = self.data_dir / "index.json"
-        self.metadata_path = self.data_dir / "metadata.json"
+        self.store_dir = Path(store_dir)
+        self.docs_dir = self.store_dir / "documents"
+        self.index_path = self.store_dir / "index.json"
         
         # Create directories if they don't exist
-        self.documents_dir.mkdir(parents=True, exist_ok=True)
+        self.docs_dir.mkdir(parents=True, exist_ok=True)
         
-        # Initialize or load index
+        # Load or create index
         self.index = self._load_index()
-        self.metadata = self._load_metadata()
-        
-        logger.info(f"Initialized vector store at {self.data_dir}")
-        logger.info(f"Found {len(self.index)} documents in the store")
     
-    def _load_index(self) -> Dict[str, str]:
-        """Load document index from disk."""
+    def _load_index(self) -> Dict[str, Dict[str, Any]]:
+        """Load the document index from disk."""
         if self.index_path.exists():
-            with open(self.index_path, 'r') as f:
+            with open(self.index_path, "r") as f:
                 return json.load(f)
         return {}
     
     def _save_index(self):
-        """Save document index to disk."""
-        with open(self.index_path, 'w') as f:
-            json.dump(self.index, f)
+        """Save the document index to disk."""
+        with open(self.index_path, "w") as f:
+            json.dump(self.index, f, indent=2)
     
-    def _load_metadata(self) -> Dict[str, Dict[str, Any]]:
-        """Load document metadata from disk."""
-        if self.metadata_path.exists():
-            with open(self.metadata_path, 'r') as f:
-                return json.load(f)
-        return {}
+    def _save_document(self, doc: Document):
+        """Save a document and its embedding to disk."""
+        doc_path = self.docs_dir / f"{doc.id}.json"
+        with open(doc_path, "w") as f:
+            json.dump(doc.dict(), f, indent=2)
     
-    def _save_metadata(self):
-        """Save document metadata to disk."""
-        with open(self.metadata_path, 'w') as f:
-            json.dump(self.metadata, f)
-    
-    def add_document(self, document: Document) -> str:
+    def add_document(self, doc: Document) -> str:
         """Add a document to the vector store.
         
         Args:
-            document: Document to add
+            doc: Document to add
             
         Returns:
             str: Document ID
         """
-        # Save document to disk
-        doc_path = self.documents_dir / f"{document.id}.json"
-        with open(doc_path, 'w') as f:
-            f.write(document.json())
+        if not doc.embedding:
+            raise ValueError("Document must have an embedding")
+        
+        # Save document
+        self._save_document(doc)
         
         # Update index
-        self.index[document.id] = str(doc_path)
+        self.index[doc.id] = {
+            "metadata": doc.metadata,
+            "embedding": doc.embedding
+        }
         self._save_index()
         
-        # Update metadata
-        self.metadata[document.id] = {
-            "content_preview": document.content[:100] + "..." if len(document.content) > 100 else document.content,
-            **document.metadata
-        }
-        self._save_metadata()
-        
-        logger.info(f"Added document {document.id} to vector store")
-        return document.id
+        logger.info(f"Added document {doc.id} to vector store")
+        return doc.id
     
     def get_document(self, doc_id: str) -> Optional[Document]:
         """Retrieve a document by ID.
@@ -102,15 +88,14 @@ class VectorStore:
             doc_id: Document ID
             
         Returns:
-            Document if found, None otherwise
+            Optional[Document]: Document if found, None otherwise
         """
-        if doc_id not in self.index:
+        doc_path = self.docs_dir / f"{doc_id}.json"
+        if not doc_path.exists():
             return None
-        
-        doc_path = self.index[doc_id]
-        with open(doc_path, 'r') as f:
-            doc_data = json.load(f)
-            return Document(**doc_data)
+            
+        with open(doc_path, "r") as f:
+            return Document(**json.load(f))
     
     def delete_document(self, doc_id: str) -> bool:
         """Delete a document from the vector store.
@@ -119,29 +104,24 @@ class VectorStore:
             doc_id: Document ID
             
         Returns:
-            bool: True if document was deleted, False otherwise
+            bool: True if document was deleted, False if not found
         """
-        if doc_id not in self.index:
+        doc_path = self.docs_dir / f"{doc_id}.json"
+        if not doc_path.exists():
             return False
-        
+            
         # Remove document file
-        doc_path = Path(self.index[doc_id])
-        if doc_path.exists():
-            doc_path.unlink()
+        doc_path.unlink()
         
         # Update index
-        del self.index[doc_id]
-        self._save_index()
-        
-        # Update metadata
-        if doc_id in self.metadata:
-            del self.metadata[doc_id]
-            self._save_metadata()
-        
+        if doc_id in self.index:
+            del self.index[doc_id]
+            self._save_index()
+            
         logger.info(f"Deleted document {doc_id} from vector store")
         return True
     
-    def search(self, query_embedding: List[float], top_k: int = 5) -> List[Dict[str, Any]]:
+    def search(self, query_embedding: List[float], top_k: int = 3) -> List[Dict[str, Any]]:
         """Search for similar documents using cosine similarity.
         
         Args:
@@ -149,46 +129,43 @@ class VectorStore:
             top_k: Number of results to return
             
         Returns:
-            List of documents with similarity scores
+            List[Dict[str, Any]]: List of documents with similarity scores
         """
-        query_embedding = np.array(query_embedding)
-        results = []
-        
-        for doc_id, doc_path in self.index.items():
-            try:
-                doc = self.get_document(doc_id)
-                if doc and doc.embedding:
-                    # Calculate cosine similarity
-                    doc_embedding = np.array(doc.embedding)
-                    similarity = np.dot(query_embedding, doc_embedding) / (
-                        np.linalg.norm(query_embedding) * np.linalg.norm(doc_embedding)
-                    )
-                    
-                    results.append({
-                        "id": doc_id,
-                        "content": doc.content,
-                        "metadata": doc.metadata,
-                        "similarity": float(similarity)
-                    })
-            except Exception as e:
-                logger.error(f"Error processing document {doc_id}: {str(e)}")
-        
-        # Sort by similarity (highest first) and return top_k
-        results.sort(key=lambda x: x["similarity"], reverse=True)
-        return results[:top_k]
-    
-    def list_documents(self, limit: int = 100, offset: int = 0) -> List[Dict[str, Any]]:
-        """List documents in the vector store.
-        
-        Args:
-            limit: Maximum number of documents to return
-            offset: Number of documents to skip
+        if not self.index:
+            return []
             
+        # Convert query to numpy array
+        query_vec = np.array(query_embedding)
+        
+        # Calculate similarities
+        similarities = []
+        for doc_id, doc_data in self.index.items():
+            doc_vec = np.array(doc_data["embedding"])
+            similarity = np.dot(query_vec, doc_vec) / (np.linalg.norm(query_vec) * np.linalg.norm(doc_vec))
+            similarities.append((doc_id, similarity))
+        
+        # Sort by similarity and get top k
+        similarities.sort(key=lambda x: x[1], reverse=True)
+        top_results = similarities[:top_k]
+        
+        # Get full documents
+        results = []
+        for doc_id, score in top_results:
+            doc = self.get_document(doc_id)
+            if doc:
+                results.append({
+                    "id": doc.id,
+                    "content": doc.content,
+                    "metadata": doc.metadata,
+                    "score": float(score)
+                })
+        
+        return results
+    
+    def list_documents(self) -> List[str]:
+        """List all document IDs in the store.
+        
         Returns:
-            List of document metadata
+            List[str]: List of document IDs
         """
-        doc_ids = list(self.index.keys())[offset:offset+limit]
-        return [
-            {"id": doc_id, **self.metadata.get(doc_id, {})}
-            for doc_id in doc_ids
-        ]
+        return list(self.index.keys())
