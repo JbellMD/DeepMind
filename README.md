@@ -52,24 +52,46 @@ This project implements a high-performance conversational AI system with a moder
 ```
 DeepMind/
 │
-├── backend/                # FastAPI backend
-│   ├── config.py           # Configuration settings
-│   ├── model/              # Model management
-│   │   ├── service.py      # Model serving
-│   │   ├── training.py     # Fine-tuning logic
-│   │   └── optimization.py # Performance optimizations
-│   ├── rag/                # RAG components
-│   │   ├── vector_store.py # Document storage
-│   │   ├── processor.py    # Document processing
-│   │   └── service.py      # RAG integration
-│   └── api/                # API endpoints
+├── backend/                      # FastAPI backend
+│   ├── config.py                 # Configuration settings
+│   ├── document_processor.py     # Document processing for RAG
+│   ├── embedding_service.py      # Embedding generation service
+│   ├── main.py                   # Main application entry point
+│   ├── main_with_rag.py          # RAG-enhanced application entry
+│   ├── model.py                  # Core model implementation
+│   ├── model_service.py          # Model serving interface
+│   ├── rag_api.py                # RAG API endpoints
+│   ├── rag_enhanced_model.py     # RAG-enhanced model implementation
+│   ├── rag_model.py              # RAG model core
+│   ├── rag_service.py            # RAG service implementation
+│   ├── server.py                 # Server implementation
+│   ├── vector_store.py           # Vector database implementation
+│   ├── requirements.txt          # Python dependencies
+│   ├── model/                    # Model management
+│   │   ├── optimization.py       # Performance optimizations
+│   │   └── training.py           # Fine-tuning logic
+│   └── monitoring/               # Performance monitoring tools
 │
-├── frontend/              # Next.js frontend
-│   ├── components/        # React components
-│   ├── pages/            # Next.js pages
-│   └── styles/           # CSS and styling
+├── frontend/                     # Next.js frontend
+│   ├── components/               # React components
+│   ├── monitoring-dashboard/     # Performance monitoring UI
+│   ├── pages/                    # Next.js pages
+│   ├── public/                   # Static assets
+│   ├── src/                      # Source code
+│   ├── next.config.js            # Next.js configuration
+│   └── tsconfig.json             # TypeScript configuration
 │
-└── docker/               # Docker configurations
+├── docker/                       # Docker configurations
+├── examples/                     # Example implementations
+│   └── monitoring_example.py     # Monitoring usage example
+│
+├── shared/                       # Shared resources (currently empty)
+├── .dockerignore                 # Docker ignore file
+├── .gitignore                    # Git ignore file
+├── Dockerfile                    # Docker configuration
+├── docker-compose.yml            # Docker Compose configuration
+├── docker-scripts.sh             # Docker helper scripts
+└── LICENSE                       # Project license
 ```
 
 ## System Requirements
